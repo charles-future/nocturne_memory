@@ -1,0 +1,172 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { ShieldCheck, Database, LayoutGrid, Sparkles, AlertCircle } from 'lucide-react';
+import clsx from 'clsx';
+
+import ReviewPage from './features/review/ReviewPage';
+import MemoryBrowser from './features/memory/MemoryBrowser';
+import MaintenancePage from './features/maintenance/MaintenancePage';
+import TokenAuth from './components/TokenAuth';
+import { AUTH_ERROR_EVENT } from './lib/api';
+
+function Layout() {
+  return (
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-200">
+      {/* Top Navigation Bar */}
+      <div className="h-12 border-b border-slate-800 bg-slate-900 flex items-center px-4 gap-6 flex-shrink-0 z-10">
+        <div className="font-bold text-slate-100 flex items-center gap-2 mr-4">
+          <LayoutGrid className="w-5 h-5 text-indigo-500" />
+          <span>Nocturne Admin</span>
+        </div>
+
+        <nav className="flex items-center gap-1 h-full">
+          <NavLink
+            to="/review"
+            className={({ isActive }) => clsx(
+              "h-full flex items-center gap-2 px-4 text-sm font-medium border-b-2 transition-colors",
+              isActive ? "border-indigo-500 text-indigo-400 bg-slate-800/50" : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
+            )}
+          >
+            <ShieldCheck size={16} />
+            Review & Audit
+          </NavLink>
+
+          <NavLink
+            to="/memory"
+            className={({ isActive }) => clsx(
+              "h-full flex items-center gap-2 px-4 text-sm font-medium border-b-2 transition-colors",
+              isActive ? "border-emerald-500 text-emerald-400 bg-slate-800/50" : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
+            )}
+          >
+            <Database size={16} />
+            Memory Explorer
+          </NavLink>
+
+          <NavLink
+            to="/maintenance"
+            className={({ isActive }) => clsx(
+              "h-full flex items-center gap-2 px-4 text-sm font-medium border-b-2 transition-colors",
+              isActive ? "border-amber-500 text-amber-400 bg-slate-800/50" : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
+            )}
+          >
+            <Sparkles size={16} />
+            Brain Cleanup
+          </NavLink>
+        </nav>
+      </div>
+
+      {/* Main Area */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <Routes>
+          <Route path="/" element={<Navigate to="/review" replace />} />
+
+          <Route path="/review" element={<ReviewPage />} />
+
+          <Route path="/memory" element={<MemoryBrowser />} />
+
+          <Route path="/maintenance" element={<MaintenancePage />} />
+        </Routes>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('api_token');
+  });
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [backendError, setBackendError] = useState(false);
+
+  const handleAuthError = useCallback(() => {
+    setIsAuthenticated(false);
+  }, []);
+
+  const handleAuthenticated = useCallback(() => {
+    setIsAuthenticated(true);
+    setBackendError(false);
+  }, []);
+
+  // 组件挂载时，尝试发送一个无 token 的请求探测后端是否连通及鉴权状态
+  useEffect(() => {
+    let mounted = true;
+
+    const checkAuthStatus = async () => {
+      try {
+        const { getDomains } = await import('./lib/api');
+        await getDomains();
+        if (mounted) {
+          setIsAuthenticated(true);
+          setBackendError(false);
+          setIsCheckingAuth(false);
+        }
+      } catch (error) {
+        if (mounted) {
+          if (!error.response) {
+            // 没有响应，说明是网络错误（后端未启动）
+            setBackendError(true);
+          } else if (error.response.status === 401) {
+            setIsAuthenticated(false);
+            setBackendError(false);
+          } else {
+            setBackendError(false);
+          }
+          setIsCheckingAuth(false);
+        }
+      }
+    };
+
+    checkAuthStatus();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // 监听 401 事件，切换回认证界面
+  useEffect(() => {
+    window.addEventListener(AUTH_ERROR_EVENT, handleAuthError);
+    return () => {
+      window.removeEventListener(AUTH_ERROR_EVENT, handleAuthError);
+    };
+  }, [handleAuthError]);
+
+  if (isCheckingAuth) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-400">
+        <div className="w-8 h-8 rounded-full border-2 border-indigo-500/30 border-t-indigo-500 animate-spin mb-4"></div>
+        <div className="text-sm">Connecting to Memory Core...</div>
+      </div>
+    );
+  }
+
+  if (backendError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 text-slate-400">
+        <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+          <AlertCircle className="w-6 h-6 text-red-500" />
+        </div>
+        <div className="text-lg font-bold text-slate-100 mb-1">后端未连接</div>
+        <div className="text-sm text-slate-500">请检查后端服务是否已启动</div>
+        <button 
+          onClick={() => window.location.reload()}
+          className="mt-6 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm transition-colors"
+        >
+          重试
+        </button>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <TokenAuth onAuthenticated={handleAuthenticated} />;
+  }
+
+  return (
+    <BrowserRouter>
+      <Layout />
+    </BrowserRouter>
+  );
+}
+
+export default App;
